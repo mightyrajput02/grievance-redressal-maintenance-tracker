@@ -18,6 +18,8 @@ Our platform allows users to:
 ## Tech Stack
 
 Frontend:
+- HTML
+- Javascript
 - React
 - Tailwind CSS
 
