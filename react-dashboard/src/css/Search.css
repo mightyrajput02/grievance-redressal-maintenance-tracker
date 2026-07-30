@@ -1,0 +1,33 @@
+.search-container {
+  margin-left: 280px;
+
+  margin-top: 30px;
+
+  display: flex;
+
+  gap: 20px;
+
+  padding-right: 30px;
+}
+
+.search-container input {
+  flex: 1;
+
+  padding: 12px;
+
+  border: 1px solid #ccc;
+
+  border-radius: 8px;
+
+  font-size: 16px;
+}
+
+.search-container select {
+  padding: 12px;
+
+  border-radius: 8px;
+
+  border: 1px solid #ccc;
+
+  font-size: 15px;
+}
