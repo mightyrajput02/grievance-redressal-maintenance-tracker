@@ -168,3 +168,57 @@ adminButton.addEventListener("click", function () {
       }, 1000);
     });
 });
+
+async function loadApexData() {
+  try {
+    // 1. Call your FastAPI endpoint (NOT the Oracle URL directly)
+    const response = await fetch("http://127.0.0.1:8000/apex-data");
+
+    // 2. Check if the backend returned an error (like the 503 Maintenance error)
+    if (!response.ok) {
+      throw new Error(`Server error: ${response.status}`);
+    }
+
+    // 3. Convert the response to JSON
+    const data = await response.json();
+
+    // 4. Log it to see what it looks like
+    console.log("Data received from backend:", data);
+
+    // 5. Call a function to display this data on your webpage
+    displayDataOnPage(data);
+  } catch (error) {
+    console.error("Failed to fetch data:", error);
+    // You can display an error message on your UI here
+  }
+}
+
+// Trigger the function when the page loads
+loadApexData();
+
+async function loadApexData() {
+  try {
+    // 1. Call your FastAPI endpoint (NOT the Oracle URL directly)
+    const response = await fetch("http://127.0.0.1:8000/apex-data");
+
+    // 2. Check if the backend returned an error (like the 503 Maintenance error)
+    if (!response.ok) {
+      throw new Error(`Server error: ${response.status}`);
+    }
+
+    // 3. Convert the response to JSON
+    const data = await response.json();
+
+    // 4. Log it to see what it looks like
+    console.log("Data received from backend:", data);
+
+    // 5. Call a function to display this data on your webpage
+    displayDataOnPage(data);
+  } catch (error) {
+    console.error("Failed to fetch data:", error);
+    // You can display an error message on your UI here
+  }
+}
+
+// Trigger the function when the page loads
+loadApexData();
