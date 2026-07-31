@@ -1,140 +1,326 @@
-from fastapi import FastAPI, Depends, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy import create_engine, Column, Integer, String
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker, Session
-from pydantic import BaseModel
-import uvicorn
+import http.server
+import socketserver
+import json
+import sqlite3
+import os
+from datetime import datetime
+from urllib.parse import parse_qs, urlparse
 
-# ==========================================
-# 1. DATABASE SETUP
-# ==========================================
-SQLALCHEMY_DATABASE_URL = "sqlite:///./grievance_tracker.db"
+PORT = 8000
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DB_DIR = os.path.join(os.path.dirname(BASE_DIR), "Database")
+DB_PATH = os.path.join(DB_DIR, "grievance.db")
 
-engine = create_engine(SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False})
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-Base = declarative_base()
-
-# ==========================================
-# 2. DATABASE MODELS
-# ==========================================
-class ComplaintDB(Base):
-    __tablename__ = "complaints"
-    
-    id = Column(Integer, primary_key=True, index=True)
-    student_id = Column(String, index=True) # Identifies which student logged it
-    title = Column(String)
-    description = Column(String)
-    category = Column(String) 
-    status = Column(String, default="Pending")
-    assigned_staff = Column(String, default="Unassigned")
-
-Base.metadata.create_all(bind=engine)
-
-# ==========================================
-# 3. PYDANTIC SCHEMAS (Data Validation)
-# ==========================================
-class ComplaintCreate(BaseModel):
-    student_id: str
-    title: str
-    description: str
-
-class ComplaintUpdateAdmin(BaseModel):
-    status: str
-    assigned_staff: str
-
-class ComplaintResponse(BaseModel):
-    id: int
-    student_id: str
-    title: str
-    description: str
-    category: str
-    status: str
-    assigned_staff: str
-
-    class Config:
-        from_attributes = True
-
-# ==========================================
-# 4. MOCK NLP FUNCTION
-# ==========================================
-def categorize_nlp(text: str) -> str:
-    text = text.lower()
-    if any(word in text for word in ["power", "light", "fan", "electricity"]):
-        return "Electrical"
-    elif any(word in text for word in ["water", "leak", "plumbing", "washroom"]):
-        return "Plumbing"
-    elif any(word in text for word in ["wifi", "internet", "network"]):
-        return "IT"
-    return "General Maintenance"
-
-# ==========================================
-# 5. FASTAPI APP & CORS SETUP
-# ==========================================
-app = FastAPI(title="Grievance Tracker API")
-
-# Allow the React frontend to communicate with this backend
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"], # In production, replace "*" with your frontend URL
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+os.makedirs(DB_DIR, exist_ok=True)
 
 def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    return conn
 
-# ==========================================
-# 6. USER PORTAL ROUTES
-# ==========================================
-@app.post("/user/complaints/", response_model=ComplaintResponse)
-def create_complaint(complaint: ComplaintCreate, db: Session = Depends(get_db)):
-    """User Portal: Register a new complaint"""
-    category = categorize_nlp(complaint.description)
+def init_db():
+    conn = get_db()
+    cursor = conn.cursor()
     
-    db_complaint = ComplaintDB(
-        student_id=complaint.student_id,
-        title=complaint.title, 
-        description=complaint.description,
-        category=category
-    )
-    db.add(db_complaint)
-    db.commit()
-    db.refresh(db_complaint)
-    return db_complaint
-
-@app.get("/user/complaints/{student_id}", response_model=list[ComplaintResponse])
-def get_user_complaints(student_id: str, db: Session = Depends(get_db)):
-    """User Portal: Get only the complaints for a specific student"""
-    return db.query(ComplaintDB).filter(ComplaintDB.student_id == student_id).all()
-
-# ==========================================
-# 7. ADMIN PORTAL ROUTES
-# ==========================================
-@app.get("/admin/complaints/", response_model=list[ComplaintResponse])
-def get_all_complaints(db: Session = Depends(get_db)):
-    """Admin Portal: View all complaints from all students"""
-    return db.query(ComplaintDB).all()
-
-@app.put("/admin/complaints/{complaint_id}", response_model=ComplaintResponse)
-def update_complaint_status(complaint_id: int, update_data: ComplaintUpdateAdmin, db: Session = Depends(get_db)):
-    """Admin Portal: Assign staff and update ticket status"""
-    db_complaint = db.query(ComplaintDB).filter(ComplaintDB.id == complaint_id).first()
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS complaints (
+            id TEXT PRIMARY KEY,
+            student_id TEXT NOT NULL,
+            title TEXT NOT NULL,
+            description TEXT,
+            category TEXT DEFAULT 'General',
+            priority TEXT DEFAULT 'Medium',
+            status TEXT DEFAULT 'Pending',
+            staff TEXT DEFAULT 'Unassigned',
+            date TEXT NOT NULL
+        )
+    ''')
     
-    if not db_complaint:
-        raise HTTPException(status_code=404, detail="Complaint not found")
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS feedback (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            student_id TEXT,
+            rating INTEGER DEFAULT 5,
+            comments TEXT,
+            date TEXT NOT NULL
+        )
+    ''')
+    
+    # Check if complaints table is empty to insert initial seed data
+    cursor.execute("SELECT COUNT(*) FROM complaints")
+    count = cursor.fetchone()[0]
+    if count == 0:
+        seed_complaints = [
+            ("CMP-2094", "22BCS001", "AC not cooling in Room 402", "The AC unit in hostel room 402 is blowing warm air.", "Electrical", "High", "Pending", "Ravi", "2026-07-28"),
+            ("CMP-2081", "22BCS014", "Broken projector in Lab 3", "Projector display is flickering repeatedly during class.", "IT", "Medium", "In Progress", "Kiran", "2026-07-29"),
+            ("CMP-1955", "22BCS029", "Leaking tap in 2nd Floor Washroom", "Water is leaking continuously causing floor slipperiness.", "Plumbing", "Low", "Resolved", "Arjun", "2026-07-30")
+        ]
+        cursor.executemany('''
+            INSERT INTO complaints (id, student_id, title, description, category, priority, status, staff, date)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', seed_complaints)
         
-    db_complaint.status = update_data.status
-    db_complaint.assigned_staff = update_data.assigned_staff
-    
-    db.commit()
-    db.refresh(db_complaint)
-    return db_complaint
+    conn.commit()
+    conn.close()
 
-if __name__ == "__main__":
-    uvicorn.run(app, host="127.0.0.1", port=8000)
+init_db()
+
+class RequestHandler(http.server.BaseHTTPRequestHandler):
+    def _send_cors_headers(self):
+        self.send_header('Access-Control-Allow-Origin', '*')
+        self.send_header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')
+        self.send_header('Access-Control-Allow-Headers', 'Content-Type, Authorization')
+
+    def _send_json(self, data, status=200):
+        body = json.dumps(data).encode('utf-8')
+        self.send_response(status)
+        self.send_header('Content-Type', 'application/json')
+        self.send_header('Content-Length', str(len(body)))
+        self._send_cors_headers()
+        self.end_headers()
+        self.wfile.write(body)
+
+    def do_OPTIONS(self):
+        self.send_response(200)
+        self._send_cors_headers()
+        self.end_headers()
+
+    def do_GET(self):
+        parsed_path = urlparse(self.path)
+        path = parsed_path.path
+        query = parse_qs(parsed_path.query)
+
+        if path == '/apex-data':
+            self._send_json({"status": "online", "message": "Backend operational", "timestamp": datetime.now().isoformat()})
+            return
+
+        if path == '/api/stats':
+            conn = get_db()
+            cursor = conn.cursor()
+            cursor.execute("SELECT COUNT(*) FROM complaints")
+            total = cursor.fetchone()[0]
+            cursor.execute("SELECT COUNT(*) FROM complaints WHERE status = 'Pending'")
+            pending = cursor.fetchone()[0]
+            cursor.execute("SELECT COUNT(*) FROM complaints WHERE status = 'In Progress'")
+            in_progress = cursor.fetchone()[0]
+            cursor.execute("SELECT COUNT(*) FROM complaints WHERE status = 'Resolved'")
+            resolved = cursor.fetchone()[0]
+            conn.close()
+
+            self._send_json({
+                "total": total,
+                "pending": pending,
+                "in_progress": in_progress,
+                "resolved": resolved
+            })
+            return
+
+        if path == '/api/complaints':
+            conn = get_db()
+            cursor = conn.cursor()
+            student_id = query.get('student_id', [None])[0]
+            search = query.get('search', [None])[0]
+
+            sql = "SELECT * FROM complaints WHERE 1=1"
+            params = []
+
+            if student_id:
+                sql += " AND UPPER(student_id) = UPPER(?)"
+                params.append(student_id)
+            if search:
+                sql += " AND (UPPER(id) LIKE UPPER(?) OR UPPER(title) LIKE UPPER(?) OR UPPER(student_id) LIKE UPPER(?))"
+                term = f"%{search}%"
+                params.extend([term, term, term])
+
+            sql += " ORDER BY date DESC, id DESC"
+            cursor.execute(sql, params)
+            rows = [dict(row) for row in cursor.fetchall()]
+            conn.close()
+            self._send_json(rows)
+            return
+
+        if path.startswith('/api/complaints/'):
+            cid = path.split('/api/complaints/')[1]
+            conn = get_db()
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM complaints WHERE id = ?", (cid,))
+            row = cursor.fetchone()
+            conn.close()
+            if row:
+                self._send_json(dict(row))
+            else:
+                self._send_json({"error": "Complaint not found"}, status=404)
+            return
+
+        if path == '/api/feedback':
+            conn = get_db()
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM feedback ORDER BY date DESC, id DESC")
+            rows = [dict(row) for row in cursor.fetchall()]
+            conn.close()
+            self._send_json(rows)
+            return
+
+        self._send_json({"error": "Not Found"}, status=404)
+
+    def do_POST(self):
+        parsed_path = urlparse(self.path)
+        path = parsed_path.path
+
+        content_length = int(self.headers.get('Content-Length', 0))
+        post_data = self.rfile.read(content_length)
+        
+        try:
+            payload = json.loads(post_data.decode('utf-8')) if post_data else {}
+        except Exception:
+            self._send_json({"error": "Invalid JSON format"}, status=400)
+            return
+
+        if path == '/api/complaints':
+            student_id = payload.get('student_id', '').strip()
+            title = payload.get('title', '').strip()
+            description = payload.get('description', '').strip()
+            category = payload.get('category', 'General').strip()
+            priority = payload.get('priority', 'Medium').strip()
+
+            if not student_id or not title:
+                self._send_json({"error": "student_id and title are required"}, status=400)
+                return
+
+            conn = get_db()
+            cursor = conn.cursor()
+            
+            cursor.execute("SELECT COUNT(*) FROM complaints")
+            count = cursor.fetchone()[0]
+            new_id = f"CMP-{(count + 2000 + 1)}"
+
+            today = datetime.now().strftime("%Y-%m-%d")
+
+            cursor.execute('''
+                INSERT INTO complaints (id, student_id, title, description, category, priority, status, staff, date)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (new_id, student_id, title, description, category or 'General', priority or 'Medium', 'Pending', 'Unassigned', today))
+
+            conn.commit()
+
+            cursor.execute("SELECT * FROM complaints WHERE id = ?", (new_id,))
+            created_row = dict(cursor.fetchone())
+            conn.close()
+
+            self._send_json(created_row, status=201)
+            return
+
+        if path == '/api/feedback':
+            student_id = payload.get('student_id', 'Anonymous').strip()
+            rating = payload.get('rating', 5)
+            comments = payload.get('comments', '').strip()
+
+            today = datetime.now().strftime("%Y-%m-%d")
+
+            conn = get_db()
+            cursor = conn.cursor()
+            cursor.execute('''
+                INSERT INTO feedback (student_id, rating, comments, date)
+                VALUES (?, ?, ?, ?)
+            ''', (student_id, rating, comments, today))
+            conn.commit()
+
+            feedback_id = cursor.lastrowid
+            cursor.execute("SELECT * FROM feedback WHERE id = ?", (feedback_id,))
+            created_row = dict(cursor.fetchone())
+            conn.close()
+
+            self._send_json(created_row, status=201)
+            return
+
+        self._send_json({"error": "Not Found"}, status=404)
+
+    def do_PUT(self):
+        parsed_path = urlparse(self.path)
+        path = parsed_path.path
+
+        if path.startswith('/api/complaints/'):
+            cid = path.split('/api/complaints/')[1]
+            content_length = int(self.headers.get('Content-Length', 0))
+            post_data = self.rfile.read(content_length)
+            
+            try:
+                payload = json.loads(post_data.decode('utf-8')) if post_data else {}
+            except Exception:
+                self._send_json({"error": "Invalid JSON format"}, status=400)
+                return
+
+            conn = get_db()
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM complaints WHERE id = ?", (cid,))
+            row = cursor.fetchone()
+            if not row:
+                conn.close()
+                self._send_json({"error": "Complaint not found"}, status=404)
+                return
+
+            existing = dict(row)
+            new_title = payload.get('title', existing['title'])
+            new_description = payload.get('description', existing['description'])
+            new_category = payload.get('category', existing['category'])
+            new_priority = payload.get('priority', existing['priority'])
+            new_status = payload.get('status', existing['status'])
+            new_staff = payload.get('staff', existing['staff'])
+
+            cursor.execute('''
+                UPDATE complaints
+                SET title = ?, description = ?, category = ?, priority = ?, status = ?, staff = ?
+                WHERE id = ?
+            ''', (new_title, new_description, new_category, new_priority, new_status, new_staff, cid))
+
+            conn.commit()
+
+            cursor.execute("SELECT * FROM complaints WHERE id = ?", (cid,))
+            updated_row = dict(cursor.fetchone())
+            conn.close()
+
+            self._send_json(updated_row)
+            return
+
+        self._send_json({"error": "Not Found"}, status=404)
+
+    def do_DELETE(self):
+        parsed_path = urlparse(self.path)
+        path = parsed_path.path
+
+        if path.startswith('/api/complaints/'):
+            cid = path.split('/api/complaints/')[1]
+            conn = get_db()
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM complaints WHERE id = ?", (cid,))
+            row = cursor.fetchone()
+            if not row:
+                conn.close()
+                self._send_json({"error": "Complaint not found"}, status=404)
+                return
+
+            cursor.execute("DELETE FROM complaints WHERE id = ?", (cid,))
+            conn.commit()
+            conn.close()
+
+            self._send_json({"message": f"Complaint {cid} deleted successfully"})
+            return
+
+        self._send_json({"error": "Not Found"}, status=404)
+
+class ThreadedHTTPServer(socketserver.ThreadingMixIn, http.server.HTTPServer):
+    daemon_threads = True
+    allow_reuse_address = True
+
+def run():
+    server_address = ('127.0.0.1', PORT)
+    httpd = ThreadedHTTPServer(server_address, RequestHandler)
+    print(f"Server starting on http://127.0.0.1:{PORT} with SQLite database at {DB_PATH}")
+    try:
+        httpd.serve_forever()
+    except KeyboardInterrupt:
+        pass
+    httpd.server_close()
+
+if __name__ == '__main__':
+    run()

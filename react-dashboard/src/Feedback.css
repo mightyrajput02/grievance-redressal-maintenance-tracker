@@ -1,0 +1,170 @@
+.feedback-container {
+  min-height: 100vh;
+  background: linear-gradient(135deg, #f1f5f9 0%, #e2e8f0 100%);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 40px 20px;
+  position: relative;
+  overflow: hidden;
+  font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+}
+
+.feedback-content {
+  position: relative;
+  z-index: 1;
+  max-width: 650px;
+  width: 100%;
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 1);
+  border-radius: 24px;
+  padding: 40px;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.1);
+}
+
+.feedback-header {
+  text-align: center;
+  margin-bottom: 35px;
+}
+
+.feedback-header h1 {
+  color: #16a34a; /* Green theme for feedback */
+  font-size: 2.5rem;
+  font-weight: 800;
+  margin-bottom: 8px;
+}
+
+.feedback-header p {
+  color: #475569;
+  font-size: 1.1rem;
+}
+
+/* Form Styles */
+.feedback-form {
+  display: flex;
+  flex-direction: column;
+  gap: 30px;
+}
+
+.rating-section,
+.comment-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.rating-section label,
+.comment-section label {
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: #1e293b;
+}
+
+/* Star Rating Animation */
+.stars-container {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+  margin: 10px 0;
+}
+
+.star {
+  color: #cbd5e1;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.star:hover {
+  transform: scale(1.1);
+}
+
+.star.active {
+  color: #eab308; /* Yellow/Gold active state */
+  fill: #eab308;
+}
+
+/* Text Area */
+textarea {
+  width: 100%;
+  padding: 16px;
+  border-radius: 12px;
+  border: 1px solid #cbd5e1;
+  background: #f8fafc;
+  font-size: 1rem;
+  color: #334155;
+  resize: vertical;
+  outline: none;
+  font-family: inherit;
+  transition: border-color 0.2s;
+}
+
+textarea:focus {
+  border-color: #16a34a;
+  background: white;
+}
+
+/* Submit Button */
+.submit-feedback-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  background: #16a34a;
+  color: white;
+  padding: 18px;
+  border: none;
+  border-radius: 12px;
+  font-size: 1.1rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.submit-feedback-btn:hover:not(:disabled) {
+  background: #15803d;
+  transform: translateY(-2px);
+  box-shadow: 0 10px 15px -3px rgba(22, 163, 74, 0.2);
+}
+
+.submit-feedback-btn:disabled {
+  background: #94a3b8;
+  cursor: not-allowed;
+}
+
+/* Success State */
+.success-message {
+  text-align: center;
+  padding: 40px 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 15px;
+}
+
+.success-message h2 {
+  color: #16a34a;
+  font-size: 2rem;
+  margin: 0;
+}
+
+.success-message p {
+  color: #475569;
+  font-size: 1.1rem;
+  margin-bottom: 20px;
+}
+
+.return-btn {
+  background: #f1f5f9;
+  color: #0f172a;
+  border: 1px solid #cbd5e1;
+  padding: 12px 24px;
+  border-radius: 8px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.return-btn:hover {
+  background: #e2e8f0;
+}
